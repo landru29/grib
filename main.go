@@ -7,8 +7,9 @@ import (
 	"os"
 
 	"encoding/json"
-	"github.com/nilsmagnus/grib/griblib"
 	"io"
+
+	"github.com/nilsmagnus/grib/griblib"
 )
 
 func optionsFromFlag() griblib.Options {

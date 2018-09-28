@@ -8,7 +8,7 @@ import (
 )
 
 //Data3 is a Grid point data - complex packing and spatial differencing
-// http://www.nco.ncep.noaa.gov/pmb/docs/grib2/grib2_temp5-3.shtml
+// http://www.nco.ncep.noaa.gov/pmb/docs/grib2/grib2_doc/grib2_temp5-3.shtml
 type Data3 struct {
 	Reference              float32 `json:"reference"`
 	BinaryScale            uint16  `json:"binaryScale"`
@@ -31,7 +31,7 @@ type Data3 struct {
 }
 
 // ParseData3 parses data3 struct from the reader into the an array of floating-point values
-func ParseData3(dataReader io.Reader, dataLength int, template *Data3) []float64 {
+func ParseData3(dataReader io.Reader, dataLength int, template *Data3) ([]float64, error) {
 
 	rawData := make([]byte, dataLength)
 	dataReader.Read(rawData)
@@ -84,7 +84,7 @@ func ParseData3(dataReader io.Reader, dataLength int, template *Data3) []float64
 	//
 	references, err := bitReader.readUintsBlock(int(template.Bits), numberOfGroups)
 	if err != nil {
-		panic(err)
+		return []float64{}, err
 	}
 
 	//
@@ -92,7 +92,7 @@ func ParseData3(dataReader io.Reader, dataLength int, template *Data3) []float64
 	//
 	widths, err := bitReader.readUintsBlock(int(template.GroupWidthsBits), numberOfGroups)
 	if err != nil {
-		panic(err)
+		return []float64{}, err
 	}
 
 	for j := 0; j < numberOfGroups; j++ {
@@ -104,7 +104,7 @@ func ParseData3(dataReader io.Reader, dataLength int, template *Data3) []float64
 	//
 	lengths, err := bitReader.readUintsBlock(int(template.GroupScaledLengthsBits), numberOfGroups)
 	if err != nil {
-		panic(err)
+		return []float64{}, err
 	}
 
 	for j := 0; j < numberOfGroups; j++ {
@@ -132,7 +132,7 @@ func ParseData3(dataReader io.Reader, dataLength int, template *Data3) []float64
 
 	if totBit/8 > int(dataLength) {
 		fmt.Println(totLen)
-		panic("Checksum err")
+		return []float64{}, fmt.Errorf("Checksum err")
 	}
 
 	//
@@ -278,5 +278,5 @@ func ParseData3(dataReader io.Reader, dataLength int, template *Data3) []float64
 		}
 	}
 
-	return fld
+	return fld, nil
 }
