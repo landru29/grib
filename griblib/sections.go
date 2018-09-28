@@ -105,11 +105,11 @@ func ReadMessage(gribFile io.Reader) (message Message, err error) {
 		case 4:
 			message.Section4, err = ReadSection4(gribDataSections)
 		case 5:
-			message.Section5, err = ReadSection5(gribDataSections)
+			message.Section5, err = ReadSection5(gribDataSections, sectionHead.ContentLength())
 		case 6:
 			message.Section6, err = ReadSection6(gribDataSections, sectionHead.ContentLength())
 		case 7:
-			message.Section7, err = ReadSection7(gribDataSections, sectionHead.ContentLength(), message.Section5.DataTemplate)
+			message.Section7, err = ReadSection7(gribDataSections, sectionHead.ContentLength(), message.Section5)
 		case 8:
 			// end-section, return
 			return message, nil
@@ -413,13 +413,18 @@ func ReadSection4(f io.Reader) (section Section4, err error) {
 type Section5 struct {
 	PointsNumber       uint32 `json:"pointsNumber"`
 	DataTemplateNumber uint16 `json:"dataTemplateNumber"`
-	DataTemplate       Data3  `json:"dataTemplate"` // FIXME, support more data-types
+	// DataTemplate       Data3  `json:"dataTemplate"` // FIXME, support more data-types
+	Data []byte `json:"dataTemplate"`
 }
 
 // ReadSection5 reads section 5
 // It is for "Local use"
-func ReadSection5(f io.Reader) (section Section5, err error) {
-	err = read(f, &section.PointsNumber, &section.DataTemplateNumber, &section.DataTemplate)
+func ReadSection5(f io.Reader, length int) (section Section5, err error) {
+
+	section.Data = make([]byte, length-12)
+
+	//err = read(f, &section.PointsNumber, &section.DataTemplateNumber, &section.DataTemplate)
+	err = read(f, &section.PointsNumber, &section.DataTemplateNumber, &section.Data)
 	if err != nil {
 		return section, err
 	}
@@ -432,6 +437,17 @@ func ReadSection5(f io.Reader) (section Section5, err error) {
 	//fmt.Println(section.DataTemplate)
 
 	return section, nil
+}
+
+// GetDataTemplate extract DataTemplate from the section
+func (section Section5) GetDataTemplate() (interface{}, error) {
+	switch section.DataTemplateNumber {
+	case 3:
+		// TODO cast []byte to Data3
+		return Data3{}, nil
+	}
+
+	return Data3{}, nil
 }
 
 // Section6 is the Bit-Map section http://www.nco.ncep.noaa.gov/pmb/docs/grib2/grib2_doc/grib2_sect6.shtml
@@ -468,13 +484,20 @@ type Section7 struct {
 
 // ReadSection7 reads the actual data
 // It is for "Local use"
-func ReadSection7(f io.Reader, length int, template Data3) (section Section7, sectionError error) {
+func ReadSection7(f io.Reader, length int, section5 Section5) (section Section7, sectionError error) {
 	defer func() {
 		if err := recover(); err != nil {
 			fmt.Printf("Corrupt message %q\n", err)
 		}
 	}()
-	section.Data = ParseData3(f, length, &template) // 5 is the length of (octet 1-5)
+
+	data, sectionError := section5.GetDataTemplate()
+
+	switch x := data.(type) {
+	case Data3:
+		section.Data = ParseData3(f, length, &x)
+	}
+
 	return section, sectionError
 }
 
