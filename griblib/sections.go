@@ -63,13 +63,14 @@ func ReadMessages(gribFile io.Reader) (messages []Message, err error) {
 //ReadMessage reads the actual messages from a gribfile-reader (io.Reader from either file, http or any other io.Reader)
 func ReadMessage(gribFile io.Reader) (message Message, err error) {
 
-	section0, headError := ReadSection0(gribFile)
+	var headError error
+	message.Section0, headError = ReadSection0(gribFile)
 
 	if headError != nil {
 		return message, headError
 	}
 
-	messageBytes := make([]byte, section0.MessageLength-16)
+	messageBytes := make([]byte, message.Section0.MessageLength-16)
 
 	numBytes, readError := gribFile.Read(messageBytes)
 
@@ -78,21 +79,16 @@ func ReadMessage(gribFile io.Reader) (message Message, err error) {
 		return message, readError
 	}
 
-	if numBytes != int(section0.MessageLength-16) {
+	if numBytes != int(message.Section0.MessageLength-16) {
 		fmt.Println("Did not read full message")
 	}
 
-	return readMessage(bytes.NewReader(messageBytes), section0)
+	gribDataSections := bytes.NewReader(messageBytes)
 
-}
-
-func readMessage(gribFile io.Reader, section0 Section0) (message Message, err error) {
-
-	message.Section0 = section0
 	for {
 
 		// pre-parse section head to decide which struct use
-		sectionHead, headErr := ReadSectionHead(gribFile)
+		sectionHead, headErr := ReadSectionHead(gribDataSections)
 		if headErr != nil {
 			fmt.Println("Error reading header", headErr.Error())
 			return message, headErr
@@ -101,24 +97,24 @@ func readMessage(gribFile io.Reader, section0 Section0) (message Message, err er
 		switch sectionHead.Number {
 
 		case 1:
-			message.Section1, err = ReadSection1(gribFile)
+			message.Section1, err = ReadSection1(gribDataSections)
 		case 2:
-			message.Section2, err = ReadSection2(gribFile, sectionHead.ContentLength())
+			message.Section2, err = ReadSection2(gribDataSections, sectionHead.ContentLength())
 		case 3:
-			message.Section3, err = ReadSection3(gribFile)
+			message.Section3, err = ReadSection3(gribDataSections)
 		case 4:
-			message.Section4, err = ReadSection4(gribFile)
+			message.Section4, err = ReadSection4(gribDataSections)
 		case 5:
-			message.Section5, err = ReadSection5(gribFile)
+			message.Section5, err = ReadSection5(gribDataSections)
 		case 6:
-			message.Section6, err = ReadSection6(gribFile, sectionHead.ContentLength())
+			message.Section6, err = ReadSection6(gribDataSections, sectionHead.ContentLength())
 		case 7:
-			message.Section7, err = ReadSection7(gribFile, sectionHead.ContentLength(), message.Section5.DataTemplate)
+			message.Section7, err = ReadSection7(gribDataSections, sectionHead.ContentLength(), message.Section5.DataTemplate)
 		case 8:
 			// end-section, return
 			return message, nil
 		default:
-			err = fmt.Errorf("Unknown section number %d  (Something bad with parser or files)", sectionHead.Number)
+			return message, fmt.Errorf("Unknown section number %d  (Something bad with parser or files)", sectionHead.Number)
 		}
 		if err != nil {
 			return message, err
@@ -126,7 +122,17 @@ func readMessage(gribFile io.Reader, section0 Section0) (message Message, err er
 	}
 }
 
-//Section0 is the indicator section http://www.nco.ncep.noaa.gov/pmb/docs/grib2/grib2_sect0.shtml
+// Section0 is the indicator section http://www.nco.ncep.noaa.gov/pmb/docs/grib2/grib2_sect0.shtml
+// This section serves to identify the start of the record in a human readable form, indicate the total length of the message,
+// and indicate the Edition number of GRIB used to construct or encode the message. For GRIB2, this section is always 16 octets
+// long.
+//    | Octet Number | Content
+//    -----------------------------------------------------------------------------------------
+//    | 1-4          | 'GRIB' (Coded according to the International Alphabet Number 5)
+//    | 5-6          | reserved
+//    | 7            | Discipline (From Table 0.0)
+//    | 8            | Edition number - 2 for GRIB2
+//    | 9-16         | Total length of GRIB message in octets (All sections);
 type Section0 struct {
 	Indicator     uint32 `json:"indicator"`
 	Reserved      uint16 `json:"reserved"`
@@ -154,6 +160,10 @@ func ReadSection0(reader io.Reader) (section0 Section0, err error) {
 }
 
 //SectionHead is the common header for each section1-8
+//    | Octet Number | Content
+//    -----------------------------------------------------------
+//    | 1-4          | Length of the section in octets (21 or N)
+//    | 5            | Number of the section (1)
 type SectionHead struct {
 	ByteLength uint32 `json:"byteLength"`
 	Number     uint8  `json:"number"`
@@ -198,7 +208,15 @@ func (s SectionHead) String() string {
 	return fmt.Sprint("Section ", s.Number)
 }
 
-//Time is poorly documented other than code
+//Time is the time of section 1
+//    | Octet Number | Content
+//    ---------------------------------
+//    | 13-14        | Year (4 digits)
+//    | 15           | Month
+//    | 16           | Day
+//    | 17           | Hour
+//    | 18           | Minute
+//    | 19           | Second
 type Time struct {
 	Year   uint16 `json:"year"`   // year
 	Month  uint8  `json:"month"`  // month + 1
@@ -208,7 +226,36 @@ type Time struct {
 	Second uint8  `json:"second"` // second
 }
 
-//Section1 is the Identification section
+// Section1 is the Identification section http://www.nco.ncep.noaa.gov/pmb/docs/grib2/grib2_doc/grib2_sect1.shtml
+//    | Octet Number | Content
+//    -----------------------------------------------------------------------------------------
+//    | 1-4          | Length of the section in octets (21 or N)
+//    | 5            | Number of the section (1)
+//    | 6-7          | Identification of originating/generating center (See Table 0) (See note 4)
+//    | 8-9          | Identification of originating/generating subcenter (See Table C)
+//    | 10           | GRIB master tables version number (currently 2) (See Table 1.0) (See note 1)
+//    | 11           | Version number of GRIB local tables used to augment Master Tables (see Table 1.1)
+//    | 12           | Significance of reference time (See Table 1.2)
+//    | 13-14        | Year (4 digits)
+//    | 15           | Month
+//    | 16           | Day
+//    | 17           | Hour
+//    | 18           | Minute
+//    | 19           | Second
+//    | 20           | Production Status of Processed data in the GRIB message (See Table 1.3)
+//    | 21           | Type of processed data in this GRIB message (See Table 1.4)
+//    | 22-N         | Reserved
+//
+// Local tables define those parts of the master table which are reserved for local use except for the case described below. In any case,
+// the use of local tables in the messages are intended for non-local or international exchange is strongly discouraged.
+//
+// If octet 10 is set to 255 then only local tables are in use.  In this case, the local table version number (octet 11) must not be zero
+// nor missing.  Local tables may include entries from the entire range of the tables.
+//
+// If octet 11 is zero, octet 10 must contain a valid master table version number and only those parts of the tables not reserved for local
+// use may be used.
+//
+// If octets 8-9 is zero, Not a sub-center, the originating/generating center is the center defined by octets 6-7.
 type Section1 struct {
 	OriginatingCenter         uint16 `json:"ooriginatingCenter"`
 	OriginatingSubCenter      uint16 `json:"originatingSubCenter"`
@@ -220,23 +267,62 @@ type Section1 struct {
 	Type                      uint8  `json:"type"` // data type, Table 1.4, value 1 is forecast products
 }
 
-//ReadSection1 is poorly documented other than code
+// ReadSection1 reads the section 1
+// It is for "Local use"
 func ReadSection1(f io.Reader) (section Section1, err error) {
 	return section, binary.Read(f, binary.BigEndian, &section)
 }
 
-//Section2 is poorly documented other than code
+// Section2 is the Local Use section http://www.nco.ncep.noaa.gov/pmb/docs/grib2/grib2_doc/grib2_sect2.shtml
+//    | Octet Number | Content
+//    -----------------------------------------------------------------------------------------
+//    | 1-4          | Length of the section in octets (N)
+//    | 5            | Number of the section (2)
+//    | 6-N          | Local Use
+//
+// Center=7 (NCEP), subcenter=14(NWS Meteorological Development Laboratory (MDL)) used octet 6 to indicate which local use table
+// to use. For MDL, octet 6=1 indicates use: "MDL Template 2.1"
 type Section2 struct {
 	LocalUse []uint8 `json:"localUse"`
 }
 
-//ReadSection2 is for "Local use"
+// ReadSection2 reads the section 2
+// It is for "Local use"
 func ReadSection2(f io.Reader, len int) (section Section2, err error) {
 	section.LocalUse = make([]uint8, len)
 	return section, read(f, &section.LocalUse)
 }
 
-//Section3 contains information of the grid(earth shape, long, lat, etc)
+// Section3 is the Grid Definition section http://www.nco.ncep.noaa.gov/pmb/docs/grib2/grib2_doc/grib2_sect3.shtml
+// It contains information of the grid(earth shape, long, lat, etc)
+//    | Octet Number | Content
+//    -----------------------------------------------------------------------------------------
+//    | 1-4          | Length of the section in octets (nn)
+//    | 5            | Number of the section (3)
+//    | 6            | Source of grid definition (See Table 3.0) (See note 1 below)
+//    | 7-10         | Number of data points
+//    | 11           | Number of octets for optional list of numbers defining number of points (See note 2 below)
+//    | 12           | Interpetation of list of numbers defining number of points (See Table 3.11)
+//    | 13-14        | Grid definition template number (= N) (See Table 3.1)
+//    | 15-xx        | Grid definition template (See Template 3.N, where N is the grid definition template
+//    |              | number given in octets 13-14)
+//    | [xx+1]-nn    | Optional list of numbers defining number of points (See notes 2, 3, and 4 below)
+//
+// If octet 6 is not zero, octets 15-xx (15-nn if octet 11 is zero) may not be supplied.  This should be documented with all bits set
+// to 1 in the grid definition template number.
+//
+// An optional list of numbers defining number of points is used to document a quasi-regular grid, where the number of points may vary
+// from one row to another.  In such a case, octet 11 is non zero and gives the number octets on which each number of points is encoded.
+// For all other cases, such as regular grids, octets 11 and 12 are zero and no list is appended to the grid definition template.
+//
+// If a list of numbers defining the number of points is preset, it is appended at the end of the grid definition template ( or directly
+// after the grid definition number if the template is missing).  When the grid definition template is present, the length is given
+// according to bit 3 of the scanning mode flag octet (length is Nj or Ny for flag value 0).  List ordering is implied by data scanning.
+//
+// Depending on the code value given in octet 12, the list of numbers either:
+//   - Corresponds to the coordinate lines as given in the grid definition, or
+//   - Corresponds to a full circle, or
+//   - Does not apply.
 type Section3 struct {
 	Source                   uint8       `json:"source"`
 	DataPointCount           uint32      `json:"datapointCount"`
@@ -250,7 +336,8 @@ func (s Section3) String() string {
 	return fmt.Sprint("Point count: ", s.DataPointCount, " Definition: ", GridDefinitionTemplateDescription(int(s.TemplateNumber)))
 }
 
-//ReadSection3 is poorly documented other than code
+// ReadSection3 reads section 3
+// It is for "Local use"
 func ReadSection3(f io.Reader) (section Section3, err error) {
 
 	err = read(f, &section.Source, &section.DataPointCount, &section.PointCountOctets, &section.PointCountInterpretation, &section.TemplateNumber)
@@ -262,7 +349,27 @@ func ReadSection3(f io.Reader) (section Section3, err error) {
 	return section, err
 }
 
-//Section4 is the Product Definition Section
+// Section4 is the Product Definition Section http://www.nco.ncep.noaa.gov/pmb/docs/grib2/grib2_doc/grib2_sect4.shtml
+//    | Octet Number | Content
+//    -----------------------------------------------------------------------------------------
+//    | 1-4          | Length of the section in octets (nn)
+//    | 5            | Number of the section (4)
+//    | 6-7          | Number of coordinate values after template (See note 1 below)
+//    | 8-9          | Product definition template number (See Table 4.0)
+//    | 10-xx        | Product definition template (See product template 4.X, where X is
+//    |              | the number given in octets 8-9)
+//    | [xx+1]-nn    | Optional list of coordinate values (See notes 2 and 3 below)
+//
+// Coordinate values are intended to document the vertical discretization associated with model data on hybrid coordinate vertical
+// levels.  A value of zero in octets 6-7 indicates that no such values are present.  Otherwise the number corresponds to the whole
+// set of values.
+//
+// Hybrid systems employ a means of representing vertical coordinates in terms of a mathematical combination of pressure and sigma
+// coordinates.  When used in conjunction with a surface pressure field and an appropriate mathematical expression, the vertical
+// coordinate parameters may be used to interpret the hybrid vertical coordinate.
+//
+// Hybrid coordinate values, if present, should be encoded in IEEE 32-bit floating point format.  They are intended to be encoded as
+// pairs.
 type Section4 struct {
 	CoordinatesCount                uint16   `json:"coordinatesCount"`
 	ProductDefinitionTemplateNumber uint16   `json:"productDefinitionTemplateNumber"`
@@ -270,7 +377,8 @@ type Section4 struct {
 	Coordinates                     []byte   `json:"coordinates"`
 }
 
-//ReadSection4 reads section4 from an io.Reader
+// ReadSection4 reads section 4
+// It is for "Local use"
 func ReadSection4(f io.Reader) (section Section4, err error) {
 	err = read(f, &section.CoordinatesCount, &section.ProductDefinitionTemplateNumber)
 	if err != nil {
@@ -293,14 +401,23 @@ func ReadSection4(f io.Reader) (section Section4, err error) {
 	return section, read(f, &section.Coordinates)
 }
 
-//Section5 is "Data Representation Section"
+// Section5 is Data Representation section http://www.nco.ncep.noaa.gov/pmb/docs/grib2/grib2_doc/grib2_sect5.shtml
+//    | Octet Number | Content
+//    -----------------------------------------------------------------------------------------
+//    | 1-4          | Length of the section in octets (nn)
+//    | 5            | Number of the section (5)
+//    | 6-9          | Number of data points where one or more values are specified in Section 7 when a bit map is present,
+//    |              | total number of data points when a bit map is absent.
+//    | 10-11        | Data representation template number (See Table 5.0 http://www.nco.ncep.noaa.gov/pmb/docs/grib2/grib2_doc/grib2_table5-0.shtml)
+//    | 12-nn        | Data representation template (See Template 5.X, where X is the number given in octets 10-11)
 type Section5 struct {
 	PointsNumber       uint32 `json:"pointsNumber"`
 	DataTemplateNumber uint16 `json:"dataTemplateNumber"`
 	DataTemplate       Data3  `json:"dataTemplate"` // FIXME, support more data-types
 }
 
-//ReadSection5 is poorly documented other than code
+// ReadSection5 reads section 5
+// It is for "Local use"
 func ReadSection5(f io.Reader) (section Section5, err error) {
 	err = read(f, &section.PointsNumber, &section.DataTemplateNumber, &section.DataTemplate)
 	if err != nil {
@@ -317,25 +434,40 @@ func ReadSection5(f io.Reader) (section Section5, err error) {
 	return section, nil
 }
 
-//Section6 is poorly documented other than code
+// Section6 is the Bit-Map section http://www.nco.ncep.noaa.gov/pmb/docs/grib2/grib2_doc/grib2_sect6.shtml
+//    | Octet Number | Content
+//    -----------------------------------------------------------------------------------------
+//    | 1-4          | Length of the section in octets (nn)
+//    | 5            | Number of the section (6)
+//    | 6            | Bit-map indicator (See Table 6.0) (See note 1 below)
+//    | 7-nn         | Bit-map
+// If octet 6 is not zero, the length of this section is 6 and octets 7-nn are not present.
 type Section6 struct {
 	BitmapIndicator uint8  `json:"bitmapIndicator"`
 	Bitmap          []byte `json:"bitmap"`
 }
 
-//ReadSection6 is poorly documented other than code
+// ReadSection6 reads section 6
+// It is for "Local use"
 func ReadSection6(f io.Reader, length int) (section Section6, err error) {
 	section.Bitmap = make([]byte, length-1)
 
 	return section, read(f, &section.BitmapIndicator, &section.Bitmap)
 }
 
-//Section7 is the "Data Section"
+// Section7 is the Data section http://www.nco.ncep.noaa.gov/pmb/docs/grib2/grib2_doc/grib2_sect7.shtml
+//    | Octet Number | Content
+//    -----------------------------------------------------------------------------------------
+//    | 1-4          | Length of the section in octets (nn)
+//    | 5            | Number of the section (7)
+//    | 6-nn         | Data in a format described by data Template 7.X, where X is the data representation template number
+//    |              | given in octets 10-11 of Section 5.
 type Section7 struct {
 	Data []float64 `json:"data"`
 }
 
-//ReadSection7 reads the actual data
+// ReadSection7 reads the actual data
+// It is for "Local use"
 func ReadSection7(f io.Reader, length int, template Data3) (section Section7, sectionError error) {
 	defer func() {
 		if err := recover(); err != nil {
@@ -346,7 +478,7 @@ func ReadSection7(f io.Reader, length int, template Data3) (section Section7, se
 	return section, sectionError
 }
 
-//read is poorly documented other than code
+//read is a generic reader
 func read(reader io.Reader, data ...interface{}) (err error) {
 	for _, what := range data {
 		err = binary.Read(reader, binary.BigEndian, what)
