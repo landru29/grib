@@ -421,7 +421,7 @@ type Section5 struct {
 // It is for "Local use"
 func ReadSection5(f io.Reader, length int) (section Section5, err error) {
 
-	section.Data = make([]byte, length-12)
+	section.Data = make([]byte, length-6)
 
 	//err = read(f, &section.PointsNumber, &section.DataTemplateNumber, &section.DataTemplate)
 	err = read(f, &section.PointsNumber, &section.DataTemplateNumber, &section.Data)
@@ -442,12 +442,18 @@ func ReadSection5(f io.Reader, length int) (section Section5, err error) {
 // GetDataTemplate extract DataTemplate from the section
 func (section Section5) GetDataTemplate() (interface{}, error) {
 	switch section.DataTemplateNumber {
+
+	case 0:
+		data := Data0{}
+		read(bytes.NewReader(section.Data), &data)
+		return data, nil
 	case 3:
-		// TODO cast []byte to Data3
-		return Data3{}, nil
+		data := Data3{}
+		read(bytes.NewReader(section.Data), &data)
+		return data, nil
 	}
 
-	return Data3{}, nil
+	return struct{}{}, fmt.Errorf("Unknown data format")
 }
 
 // Section6 is the Bit-Map section http://www.nco.ncep.noaa.gov/pmb/docs/grib2/grib2_doc/grib2_sect6.shtml
@@ -493,12 +499,25 @@ func ReadSection7(f io.Reader, length int, section5 Section5) (section Section7,
 
 	data, sectionError := section5.GetDataTemplate()
 
-	switch x := data.(type) {
-	case Data3:
-		section.Data = ParseData3(f, length, &x)
+	if sectionError != nil {
+		return Section7{}, sectionError
 	}
 
-	return section, sectionError
+	var parseErr error
+	switch x := data.(type) {
+	case Data0:
+		section.Data, parseErr = ParseData0(f, length, &x)
+	case Data3:
+		section.Data, parseErr = ParseData3(f, length, &x)
+	default:
+		return Section7{}, fmt.Errorf("Unknown data type")
+	}
+
+	if parseErr != nil {
+		return Section7{}, parseErr
+	}
+
+	return section, nil
 }
 
 //read is a generic reader
