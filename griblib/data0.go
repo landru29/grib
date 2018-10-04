@@ -42,7 +42,7 @@ func ParseData0(dataReader io.Reader, dataLength int, template *Data0) ([]float6
 	buffer := bytes.NewBuffer(rawData)
 	bitReader := newReader(buffer)
 
-	fld := make([]float64, dataLength/int(template.Bits/8))
+	fld := make([]float64, 8*dataLength/int(template.Bits))
 
 	switch template.Type {
 	case 0: // Float

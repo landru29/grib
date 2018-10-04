@@ -45,7 +45,7 @@ func (r *BitReader) readFloat(nbits int) (float64, error) {
 		nbits -= 8
 	}
 	if nbits > 0 {
-		a, err := r.readByte(8)
+		a, err := r.readByte(nbits)
 		if err != nil {
 			return 0.0, err
 		}

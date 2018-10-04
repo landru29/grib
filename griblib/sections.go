@@ -423,18 +423,14 @@ func ReadSection5(f io.Reader, length int) (section Section5, err error) {
 
 	section.Data = make([]byte, length-6)
 
-	//err = read(f, &section.PointsNumber, &section.DataTemplateNumber, &section.DataTemplate)
 	err = read(f, &section.PointsNumber, &section.DataTemplateNumber, &section.Data)
 	if err != nil {
 		return section, err
 	}
 
-	if section.DataTemplateNumber != 3 {
+	if section.DataTemplateNumber != 3 && section.DataTemplateNumber != 0 {
 		return section, fmt.Errorf("Template number not supported: %d", section.DataTemplateNumber)
 	}
-	//f.Seek(int64(length - 11), 1);
-
-	//fmt.Println(section.DataTemplate)
 
 	return section, nil
 }
