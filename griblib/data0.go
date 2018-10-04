@@ -37,30 +37,36 @@ func ParseData0(dataReader io.Reader, dataLength int, template *Data0) ([]float6
 	dataReader.Read(rawData)
 
 	bscale := math.Pow(2.0, float64(template.BinaryScale))
-	dscale := math.Pow(10.0, float64(template.DecimalScale))
+	dscale := math.Pow(10.0, -float64(template.DecimalScale))
 
 	buffer := bytes.NewBuffer(rawData)
 	bitReader := newReader(buffer)
 
-	fld := make([]float64, 8*dataLength/int(template.Bits))
+	dataSize := int(math.Ceil(
+		float64(8*dataLength) / float64(template.Bits),
+	))
+
+	fld := make([]float64, dataSize)
+
+	uintDataSlice, errRead := bitReader.readUintsBlock(int(template.Bits), dataSize)
+	if errRead != nil {
+		return fld, errRead
+	}
 
 	switch template.Type {
 	case 0: // Float
-		for index := range fld {
-			ival2, err := bitReader.readFloat(int(template.Bits))
+		for index, uintValue := range uintDataSlice {
+			val, err := GetFloat(uintValue, int(template.Bits))
 			if err != nil {
-				return []float64{}, err
+				return fld, err
 			}
-			fld[index] = ival2
+			fld[index] = val
 		}
 
 	case 1: // Integer
-		for index := range fld {
-			ival2, err := bitReader.readInt(int(template.Bits))
-			if err != nil {
-				return []float64{}, err
-			}
-			fld[index] = float64(ival2)
+		for index, uintValue := range uintDataSlice {
+			signed := int64(uintValue)
+			fld[index] = float64(signed)
 		}
 	case 255:
 		return []float64{}, fmt.Errorf("Missing data type")

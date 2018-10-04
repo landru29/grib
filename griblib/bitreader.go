@@ -117,8 +117,6 @@ func (r *BitReader) readUintsBlock(bits int, count int) ([]uint64, error) {
 			if err != nil {
 				return data, err
 			}
-
-			//fmt.Println(data[i])
 		}
 
 		// if we are not fitting last byte seek to byte end
