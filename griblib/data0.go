@@ -33,49 +33,40 @@ type Data0 struct {
 // ParseData0 parses data0 struct from the reader into the an array of floating-point values
 func ParseData0(dataReader io.Reader, dataLength int, template *Data0) ([]float64, error) {
 
+	fld := []float64{}
+
+	if dataLength == 0 {
+		return fld, nil
+	}
+
 	rawData := make([]byte, dataLength)
-	dataReader.Read(rawData)
+	bytesRead, errRead := dataReader.Read(rawData)
+	if errRead != nil {
+		return fld, errRead
+	}
+	fmt.Printf("read: %d\n", bytesRead)
 
 	bscale := math.Pow(2.0, float64(template.BinaryScale))
 	dscale := math.Pow(10.0, -float64(template.DecimalScale))
 
+	scale := bscale * dscale
+	ref := dscale * float64(template.Reference)
+
 	buffer := bytes.NewBuffer(rawData)
 	bitReader := newReader(buffer)
 
-	dataSize := int(math.Ceil(
+	dataSize := int(math.Floor(
 		float64(8*dataLength) / float64(template.Bits),
 	))
-
-	fld := make([]float64, dataSize)
 
 	uintDataSlice, errRead := bitReader.readUintsBlock(int(template.Bits), dataSize)
 	if errRead != nil {
 		return fld, errRead
 	}
 
-	switch template.Type {
-	case 0: // Float
-		for index, uintValue := range uintDataSlice {
-			val, err := GetFloat(uintValue, int(template.Bits))
-			if err != nil {
-				return fld, err
-			}
-			fld[index] = val
-		}
-
-	case 1: // Integer
-		for index, uintValue := range uintDataSlice {
-			signed := int64(uintValue)
-			fld[index] = float64(signed)
-		}
-	case 255:
-		return []float64{}, fmt.Errorf("Missing data type")
-	default:
-		return []float64{}, fmt.Errorf("Unsupported data type")
-	}
-
-	for i, dataValue := range fld {
-		fld[i] = (float64(dataValue)*float64(bscale) + float64(template.Reference)) * float64(dscale)
+	for _, uintValue := range uintDataSlice {
+		signed := int64(uintValue)
+		fld = append(fld, ref+float64(signed)*scale)
 	}
 
 	return fld, nil

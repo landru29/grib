@@ -6,7 +6,7 @@ import (
 	"testing"
 )
 
-func Test_read_integrationtest_file(t *testing.T) {
+func Test_read3_integrationtest_file(t *testing.T) {
 	testFile, fileOpenErr := os.Open("integrationtestdata/gfs.t18z.pgrb2.1p00.f003")
 
 	if fileOpenErr != nil {
@@ -47,7 +47,7 @@ func Test_read_integrationtest_file(t *testing.T) {
 
 }
 
-func Test_read_integrationtest_file_hour0(t *testing.T) {
+func Test_read3_integrationtest_file_hour0(t *testing.T) {
 	testFile, fileOpenErr := os.Open("integrationtestdata/gfs.t06z.pgrb2.1p00.f000")
 
 	if fileOpenErr != nil {

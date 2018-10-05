@@ -3,9 +3,7 @@ package griblib
 import (
 	//"fmt"
 	"bufio"
-	"encoding/binary"
 	"io"
-	"math"
 )
 
 // BitReader is undocomented
@@ -32,44 +30,6 @@ func (r *BitReader) readBit() (bool, error) {
 	bit := (r.byte & (0x80 >> r.offset)) != 0
 	r.offset++
 	return bit, nil
-}
-
-func (r *BitReader) readFloat(nbits int) (float64, error) {
-	bytes := []byte{}
-	for nbits >= 8 {
-		a, err := r.readByte(8)
-		if err != nil {
-			return 0.0, err
-		}
-		bytes = append(bytes, a)
-		nbits -= 8
-	}
-	if nbits > 0 {
-		a, err := r.readByte(nbits)
-		if err != nil {
-			return 0.0, err
-		}
-		bytes = append(bytes, a)
-	}
-	bits := binary.LittleEndian.Uint64(bytes)
-	float := math.Float64frombits(bits)
-	return float, nil
-}
-
-func (r *BitReader) readByte(nbits int) (byte, error) {
-	var result byte
-	for i := nbits - 1; i >= 0; i-- {
-		bit, err := r.readBit()
-
-		if err != nil {
-			return 0, err
-		}
-		if bit {
-			result |= 1 << uint(i)
-		}
-	}
-
-	return result, nil
 }
 
 func (r *BitReader) readUint(nbits int) (uint64, error) {
@@ -117,6 +77,8 @@ func (r *BitReader) readUintsBlock(bits int, count int) ([]uint64, error) {
 			if err != nil {
 				return data, err
 			}
+
+			//fmt.Println(data[i])
 		}
 
 		// if we are not fitting last byte seek to byte end

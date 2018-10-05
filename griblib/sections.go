@@ -499,18 +499,20 @@ func ReadSection7(f io.Reader, length int, section5 Section5) (section Section7,
 		return Section7{}, sectionError
 	}
 
-	var parseErr error
-	switch x := data.(type) {
-	case Data0:
-		section.Data, parseErr = ParseData0(f, length, &x)
-	case Data3:
-		section.Data, parseErr = ParseData3(f, length, &x)
-	default:
-		return Section7{}, fmt.Errorf("Unknown data type")
-	}
+	if length != 0 {
+		var parseErr error
+		switch x := data.(type) {
+		case Data0:
+			section.Data, parseErr = ParseData0(f, length, &x)
+		case Data3:
+			section.Data, parseErr = ParseData3(f, length, &x)
+		default:
+			return Section7{}, fmt.Errorf("Unknown data type")
+		}
 
-	if parseErr != nil {
-		return Section7{}, parseErr
+		if parseErr != nil {
+			return Section7{}, parseErr
+		}
 	}
 
 	return section, nil
