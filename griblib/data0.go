@@ -37,7 +37,7 @@ func ParseData0(dataReader io.Reader, dataLength int, template *Data0) ([]float6
 	dataReader.Read(rawData)
 
 	bscale := math.Pow(2.0, float64(template.BinaryScale))
-	dscale := math.Pow(10.0, float64(template.DecimalScale))
+	dscale := math.Pow(10.0, -float64(template.DecimalScale))
 
 	buffer := bytes.NewBuffer(rawData)
 	bitReader := newReader(buffer)
@@ -60,7 +60,7 @@ func ParseData0(dataReader io.Reader, dataLength int, template *Data0) ([]float6
 			if err != nil {
 				return fld, err
 			}
-			fld[index] = float64(val)
+			fld[index] = val
 		}
 
 	case 1: // Integer

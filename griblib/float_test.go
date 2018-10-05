@@ -1,8 +1,6 @@
 package griblib
 
 import (
-	"encoding/binary"
-	"fmt"
 	"testing"
 )
 
@@ -30,7 +28,7 @@ func Test_GetFloat11WithoutExponent(t *testing.T) {
 		return
 	}
 
-	if f != float64(0.000020) {
+	if f != float64(0.00002002716064453125) {
 		t.Errorf("Expected 0.000020, got %f\n", f)
 	}
 }
@@ -67,13 +65,21 @@ func Test_GetFloat32(t *testing.T) {
 
 	x := uint64(0x42289000)
 
-	y := []byte{0, 0, 0, 0, 0, 0, 0, 0}
+	f, err := GetFloat(x, 32)
+	if err != nil {
+		t.Error(err)
+		return
+	}
 
-	binary.BigEndian.PutUint64(y, x)
+	if f != float64(42.140625) {
+		t.Errorf("Expected 42.140625, got %f\n", f)
+	}
 
-	fmt.Printf("%d %v\n", x, y)
+}
 
-	fmt.Printf("val %X\n", x)
+func Test_GetFloat32Negative(t *testing.T) {
+
+	x := uint64(0xc2289000)
 
 	f, err := GetFloat(x, 32)
 	if err != nil {
@@ -81,8 +87,8 @@ func Test_GetFloat32(t *testing.T) {
 		return
 	}
 
-	if f != float64(42.5) {
-		t.Errorf("Expected 42.5, got %f\n", f)
+	if f != float64(-42.140625) {
+		t.Errorf("Expected 42.140625, got %f\n", f)
 	}
 
 }

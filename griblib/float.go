@@ -5,39 +5,45 @@ import (
 	"math"
 )
 
-type floatParameters struct {
+type floatDefinition struct {
 	hasSign      bool
 	exponentSize byte
 	mantissaSize byte
 }
 
-var floatingtypes = map[int]floatParameters{
-	10: floatParameters{
+type floatParameters struct {
+	negative bool
+	exponent int64
+	mantissa float64
+}
+
+var floatingtypes = map[int]floatDefinition{
+	10: floatDefinition{
 		hasSign:      false,
 		exponentSize: 5,
 		mantissaSize: 5,
 	},
-	11: floatParameters{
+	11: floatDefinition{
 		hasSign:      false,
 		exponentSize: 5,
 		mantissaSize: 6,
 	},
-	14: floatParameters{
+	14: floatDefinition{
 		hasSign:      false,
 		exponentSize: 5,
 		mantissaSize: 9,
 	},
-	16: floatParameters{
+	16: floatDefinition{
 		hasSign:      true,
 		exponentSize: 5,
 		mantissaSize: 10,
 	},
-	32: floatParameters{
+	32: floatDefinition{
 		hasSign:      true,
 		exponentSize: 8,
-		mantissaSize: 32,
+		mantissaSize: 23,
 	},
-	64: floatParameters{
+	64: floatDefinition{
 		hasSign:      true,
 		exponentSize: 11,
 		mantissaSize: 52,
@@ -52,46 +58,49 @@ func getMask(nBits byte) uint64 {
 	return mask
 }
 
-// GetFloat performs a binary cast
-func GetFloat(data uint64, bits int) (float64, error) {
-	parameters, ok := floatingtypes[bits]
+func newFloatParameters(data uint64, bits int) (floatParameters, error) {
+	definition, ok := floatingtypes[bits]
 	if !ok {
-		return 0, fmt.Errorf("Unrecongnize floating bit size")
+		return floatParameters{}, fmt.Errorf("Unrecongnize floating bit size")
 	}
 
-	negative := parameters.hasSign && ((data>>(parameters.exponentSize+parameters.mantissaSize))&1 == 1)
+	parameters := floatParameters{
+		negative: definition.hasSign && ((data>>(definition.exponentSize+definition.mantissaSize))&1 == 1),
+		exponent: 0,
+		mantissa: float64(0),
+	}
 
-	exponentVal := (data >> parameters.mantissaSize) & getMask(parameters.exponentSize)
-	mantissaVal := data & getMask(parameters.mantissaSize)
+	exponentVal := (data >> definition.mantissaSize) & getMask(definition.exponentSize)
+	mantissaVal := data & getMask(definition.mantissaSize)
 
-	fmt.Printf("Mask %d %X\n", data>>parameters.mantissaSize, getMask(parameters.exponentSize))
-
-	fmt.Printf("%d: %d - %d\n", data, exponentVal, mantissaVal)
-
-	mantissa := float64(0)
-	for i := byte(1); i <= parameters.mantissaSize; i++ {
-		if (mantissaVal>>(parameters.mantissaSize-i))&1 != 0 {
-			mantissa = mantissa + math.Pow(2, -float64(i))
-			fmt.Println(mantissa)
+	for i := byte(1); i <= definition.mantissaSize; i++ {
+		if (mantissaVal>>(definition.mantissaSize-i))&1 != 0 {
+			parameters.mantissa = parameters.mantissa + math.Pow(2, -float64(i))
 		}
 	}
-
-	fmt.Printf("mantissa : %f\n", mantissa)
 
 	if exponentVal == 0 {
 		exponentVal = 1
 	} else {
-		mantissa++
+		parameters.mantissa++
 	}
 
-	fmt.Printf("toto %d\n", int64(1<<(parameters.exponentSize-1))-1)
+	parameters.exponent = int64(exponentVal) - (int64(1<<(definition.exponentSize-1)) - 1)
 
-	exponent := int64(exponentVal) - (int64(1<<(parameters.exponentSize-1)) - 1)
+	return parameters, nil
+}
 
-	fmt.Printf("exponent : %d\n", exponent)
+// GetFloat performs a binary cast
+// https://www.h-schmidt.net/FloatConverter/IEEE754.html
+func GetFloat(data uint64, nBits int) (float64, error) {
 
-	val := mantissa * math.Pow(2, float64(exponent))
-	if negative {
+	parameters, err := newFloatParameters(data, nBits)
+	if err != nil {
+		return 0.0, err
+	}
+
+	val := parameters.mantissa * math.Pow(2, float64(parameters.exponent))
+	if parameters.negative {
 		return -val, nil
 	}
 
