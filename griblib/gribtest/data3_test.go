@@ -82,15 +82,26 @@ func Test_read3_integrationtest_file_hour0(t *testing.T) {
 	}
 	defer testFile.Close()
 
-	resultFile, csvFileOpenErr := os.Open("../integrationtestdata/template_ugrd.csv")
+	resultFileUgrd, csvFileOpenErr := os.Open("../integrationtestdata/template_ugrd.csv")
 	if gribFileOpenErr != nil {
 		t.Fatalf("CSV file for integration tests not found %s", csvFileOpenErr.Error())
 	}
-	defer resultFile.Close()
+	defer resultFileUgrd.Close()
 
-	fixtures, errFixtures := readCsvAsSlice(resultFile)
-	if errFixtures != nil {
-		t.Fatalf("Could not parse CSV file %s", errFixtures.Error())
+	fixturesUgrd, errFixturesUgrd := readCsvAsSlice(resultFileUgrd)
+	if errFixturesUgrd != nil {
+		t.Fatalf("Could not parse CSV file %s", errFixturesUgrd.Error())
+	}
+
+	resultFileVgrd, csvFileOpenErr := os.Open("../integrationtestdata/template_vgrd.csv")
+	if gribFileOpenErr != nil {
+		t.Fatalf("CSV file for integration tests not found %s", csvFileOpenErr.Error())
+	}
+	defer resultFileVgrd.Close()
+
+	fixturesVgrd, errFixturesVgrd := readCsvAsSlice(resultFileVgrd)
+	if errFixturesVgrd != nil {
+		t.Fatalf("Could not parse CSV file %s", errFixturesVgrd.Error())
 	}
 
 	messages, messageParseErr := griblib.ReadMessages(testFile)
@@ -107,13 +118,23 @@ func Test_read3_integrationtest_file_hour0(t *testing.T) {
 		t.Errorf("Data template number should be 3 (found %d)", messages[0].Section5.DataTemplateNumber)
 	}
 
-	if len(fixtures) != len(messages[0].Data()) {
-		t.Errorf("should have exactly 2 message in testfile, was %d", len(fixtures))
+	if len(fixturesUgrd) != len(messages[0].Data()) {
+		t.Errorf("should find the same amount of data %d, was %d", len(messages[0].Data()), len(fixturesUgrd))
 	}
 
-	for index, data := range fixtures {
+	if len(fixturesVgrd) != len(messages[1].Data()) {
+		t.Errorf("should find the same amount of data %d, was %d", len(messages[1].Data()), len(fixturesVgrd))
+	}
+
+	for index, data := range fixturesUgrd {
 		if math.Ceil(messages[0].Section7.Data[index]*10000+.5) != math.Ceil(data*10000+.5) {
 			t.Errorf("Expected value %f at index %d, found %f", data, index, messages[0].Section7.Data[index])
+		}
+	}
+
+	for index, data := range fixturesVgrd {
+		if math.Ceil(messages[1].Section7.Data[index]*10000+.5) != math.Ceil(data*10000+.5) {
+			t.Errorf("Expected value %f at index %d, found %f", data, index, messages[1].Section7.Data[index])
 		}
 	}
 
